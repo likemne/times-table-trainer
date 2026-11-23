@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тренажёр таблицы умножения</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: #202938;
+      background: #f2f5fa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .app {
+      width: min(100%, 520px);
+      padding: 28px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 12px 40px #25385816;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      text-align: center;
+      font-size: clamp(1.5rem, 5vw, 2rem);
+    }
+
+    .subtitle {
+      margin: 0 0 24px;
+      color: #687386;
+      text-align: center;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      color: #566176;
+      font-size: 0.95rem;
+    }
+
+    .progress {
+      height: 9px;
+      margin-bottom: 24px;
+      overflow: hidden;
+      background: #e8edf5;
+      border-radius: 99px;
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: #5278e8;
+      transition: width 0.25s ease;
+    }
+
+    .question {
+      margin: 12px 0 22px;
+      text-align: center;
+      font-size: clamp(2.5rem, 12vw, 4rem);
+      font-weight: 750;
+      letter-spacing: 2px;
+    }
+
+    .answers {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    button {
+      min-height: 54px;
+      border: 0;
+      border-radius: 12px;
+      font: inherit;
+      font-size: 1.1rem;
+      font-weight: 650;
+      cursor: pointer;
+      transition: transform 0.12s ease, background 0.12s ease;
+    }
+
+    button:active { transform: scale(0.98); }
+
+    .answer {
+      color: #273247;
+      background: #eef2f8;
+    }
+
+    .answer:hover:not(:disabled) { background: #e1e8f5; }
+
+    .answer:disabled { cursor: default; }
+
+    .answer.correct {
+      color: #17663c;
+      background: #d9f4e4;
+    }
+
+    .answer.wrong {
+      color: #9b2f2f;
+      background: #ffe1e1;
+    }
+
+    .feedback {
+      min-height: 54px;
+      margin: 18px 0 0;
+      padding: 13px 15px;
+      border-radius: 12px;
+      line-height: 1.45;
+    }
+
+    .feedback:empty { visibility: hidden; }
+    .feedback.good { color: #17663c; background: #e7f8ed; }
+    .feedback.bad { color: #813737; background: #fff0f0; }
+
+    .next, .restart {
+      width: 100%;
+      margin-top: 14px;
+      color: white;
+      background: #5278e8;
+    }
+
+    .next:hover, .restart:hover { background: #4166d3; }
+
+    .next[hidden], .restart[hidden] { display: none; }
+
+    .result {
+      padding: 18px 0 4px;
+      text-align: center;
+    }
+
+    .result h2 {
+      margin: 0 0 10px;
+      font-size: 1.7rem;
+    }
+
+    .result p {
+      margin: 8px 0;
+      color: #566176;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 380px) {
+      .app { padding: 21px; }
+      .stats { font-size: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>Таблица умножения</h1>
+    <p class="subtitle">20 вопросов · можно ошибиться не больше 2 раз</p>
+
+    <section id="quiz">
+      <div class="stats">
+        <span id="questionCount">Вопрос 1 из 20</span>
+        <span id="mistakes">Ошибки: 0 из 2</span>
+      </div>
+
+      <div
+        class="progress"
+        role="progressbar"
+        aria-label="Прогресс экзамена"
+        aria-valuemin="0"
+        aria-valuemax="20"
+        aria-valuenow="0"
+      >
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+
+      <div class="question" id="question" aria-live="polite"></div>
+      <div class="answers" id="answers"></div>
+      <div class="feedback" id="feedback" aria-live="polite"></div>
+      <button class="next" id="nextButton" hidden>Далее</button>
+    </section>
+
+    <section class="result" id="result" hidden></section>
+    <button class="restart" id="restartButton" hidden>Начать заново</button>
+  </main>
+
+  <script>
+    const TOTAL_QUESTIONS = 20;
+    const MAX_MISTAKES = 2;
+
+    const quiz = document.getElementById("quiz");
+    const questionCount = document.getElementById("questionCount");
+    const mistakesLabel = document.getElementById("mistakes");
+    const progress = document.querySelector(".progress");
+    const progressBar = document.getElementById("progressBar");
+    const questionElement = document.getElementById("question");
+    const answersElement = document.getElementById("answers");
+    const feedbackElement = document.getElementById("feedback");
+    const nextButton = document.getElementById("nextButton");
+    const resultElement = document.getElementById("result");
+    const restartButton = document.getElementById("restartButton");
+
+    let questions = [];
+    let questionIndex = 0;
+    let mistakes = 0;
+    let answered = false;
+    let advanceTimer;
+
+    function shuffle(items) {
+      const shuffled = [...items];
+
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+
+      return shuffled;
+    }
+
+    function makeQuestions() {
+      const allQuestions = [];
+
+      for (let a = 2; a <= 9; a++) {
+        for (let b = 2; b <= 9; b++) {
+          allQuestions.push({ a, b, answer: a * b });
+        }
+      }
+
+      return shuffle(allQuestions).slice(0, TOTAL_QUESTIONS);
+    }
+
+    function makeOptions(correctAnswer) {
+      const options = new Set([correctAnswer]);
+
+      while (options.size < 4) {
+        const offset = Math.floor(Math.random() * 13) - 6;
+        const candidate = correctAnswer + offset;
+
+        if (candidate >= 4 && candidate <= 81) {
+          options.add(candidate);
+        }
+      }
+
+      return shuffle([...options]);
+    }
+
+    function renderQuestion() {
+      if (questionIndex >= TOTAL_QUESTIONS) {
+        finishQuiz();
+        return;
+      }
+
+      answered = false;
+      const current = questions[questionIndex];
+
+      questionCount.textContent =
+        `Вопрос ${questionIndex + 1} из ${TOTAL_QUESTIONS}`;
+      mistakesLabel.textContent = `Ошибки: ${mistakes} из ${MAX_MISTAKES}`;
+      questionElement.textContent = `${current.a} × ${current.b} = ?`;
+      feedbackElement.textContent = "";
+      feedbackElement.className = "feedback";
+      nextButton.hidden = true;
+      answersElement.replaceChildren();
+
+      const completed = questionIndex;
+      progressBar.style.width = `${(completed / TOTAL_QUESTIONS) * 100}%`;
+      progress.setAttribute("aria-valuenow", completed);
+
+      for (const option of makeOptions(current.answer)) {
+        const button = document.createElement("button");
+        button.className = "answer";
+        button.textContent = option;
+        button.type = "button";
+        button.addEventListener("click", () => checkAnswer(button, option));
+        answersElement.appendChild(button);
+      }
+    }
+
+    function checkAnswer(selectedButton, selectedAnswer) {
+      if (answered) return;
+      answered = true;
+
+      const current = questions[questionIndex];
+      const answerButtons = [...answersElement.querySelectorAll("button")];
+
+      answerButtons.forEach((button) => {
+        button.disabled = true;
+
+        if (Number(button.textContent) === current.answer) {
+          button.classList.add("correct");
+        }
+      });
+
+      if (selectedAnswer === current.answer) {
+        feedbackElement.textContent = "Верно! Следующий вопрос…";
+        feedbackElement.className = "feedback good";
+
+        advanceTimer = setTimeout(() => {
+          questionIndex++;
+          renderQuestion();
+        }, 650);
+      } else {
+        mistakes++;
+        mistakesLabel.textContent = `Ошибки: ${mistakes} из ${MAX_MISTAKES}`;
+        selectedButton.classList.add("wrong");
+        feedbackElement.textContent =
+          `Неверно. ${current.a} × ${current.b} = ${current.answer}. ` +
+          `Например: ${current.a} × ${current.b} — это ${current.b} групп по ${current.a}.`;
+        feedbackElement.className = "feedback bad";
+        nextButton.textContent =
+          mistakes > MAX_MISTAKES ? "Посмотреть результат" : "Далее";
+        nextButton.hidden = false;
+      }
+    }
+
+    function finishQuiz() {
+      clearTimeout(advanceTimer);
+      quiz.hidden = true;
+      resultElement.hidden = false;
+      restartButton.hidden = false;
+
+      const passed = mistakes <= MAX_MISTAKES;
+      resultElement.innerHTML = passed
+        ? `<h2>Экзамен сдан!</h2>
+           <p>Правильных ответов: ${TOTAL_QUESTIONS - mistakes} из ${TOTAL_QUESTIONS}.</p>
+           <p>Ошибок: ${mistakes}. Отличная работа!</p>`
+        : `<h2>Экзамен не сдан</h2>
+           <p>Ошибок: ${mistakes}. Для сдачи допускается не больше ${MAX_MISTAKES}.</p>
+           <p>Попробуйте ещё раз — вопросы будут перемешаны.</p>`;
+
+      progressBar.style.width = "100%";
+      progress.setAttribute("aria-valuenow", TOTAL_QUESTIONS);
+    }
+
+    nextButton.addEventListener("click", () => {
+      clearTimeout(advanceTimer);
+
+      if (mistakes > MAX_MISTAKES) {
+        finishQuiz();
+        return;
+      }
+
+      questionIndex++;
+      renderQuestion();
+    });
+
+    restartButton.addEventListener("click", () => {
+      clearTimeout(advanceTimer);
+      questions = makeQuestions();
+      questionIndex = 0;
+      mistakes = 0;
+      resultElement.hidden = true;
+      restartButton.hidden = true;
+      quiz.hidden = false;
+      renderQuestion();
+    });
+
+    questions = makeQuestions();
+    renderQuestion();
+  </script>
+</body>
+</html>
